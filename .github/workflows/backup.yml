@@ -1,0 +1,41 @@
+﻿name: Excel Backup Every 30 Minutes
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install dependencies
+        run: pip install google-auth google-api-python-client google-cloud-storage
+
+      - name: Run Backup
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          SOURCE_FILE_ID: ${{ secrets.SOURCE_FILE_ID }}
+          GCS_BUCKET_NAME: ${{ secrets.GCS_BUCKET_NAME }}
+          GCS_KEY_JSON: ${{ secrets.GCS_KEY_JSON }}
+        run: |
+          python3 - <<'EOF'
+          import os, json, datetime
+          from googleapiclient.discovery import build
+          from google.oauth2 import service_account
+          from google.cloud import storage
+
+          ts = datetime.datetime.utcnow().strftime("%Y-%m-%dT%H-%M-%S")
+          creds = service_account.Credentials.from_service_account_info(
+              json.loads(os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"]),
+              scopes=["https://www.googleapis.com/auth/drive.readonly"])
+          drive = build("drive", "v3", credentials=creds)
+          content = drive.files().get_media(fileId=os.environ["SOURCE_FILE_ID"]).execute()
+          gcs = service_account.Credentials.from_service_account_info(json.loads(os.environ["GCS_KEY_JSON"]))
+          client = storage.Client(credentials=gcs)
+          bucket = client.bucket(os.environ["GCS_BUCKET_NAME"])
+          ct = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+          bucket.blob(f"backups/AFF-Evals-{ts}.xlsx").upload_from_string(content, content_type=ct)
+          bucket.blob("backups/AFF-Evals-LATEST.xlsx").upload_from_string(content, content_type=ct)
+          print(f"Backup saved: AFF-Evals-{ts}.xlsx ({len(content)} bytes)")
+          EOF

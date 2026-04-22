@@ -1,8 +1,12 @@
-name: Excel Backup Every 30 Minutes
+name: Excel Backup (IST 8AM-10PM, every 30 min)
 
 on:
   schedule:
-    - cron: "*/30 * * * *"
+    # Cron runs in UTC. IST = UTC+5:30.
+    # 8:00 AM IST = 02:30 UTC ... 10:00 PM IST = 16:30 UTC.
+    # This schedule covers every :00 and :30 from 02:30 UTC to 16:30 UTC.
+    - cron: "30 2 * * *"
+    - cron: "0,30 3-16 * * *"
   workflow_dispatch:
 
 jobs:
@@ -26,4 +30,8 @@ jobs:
           SOURCE_FILE_ID: ${{ secrets.SOURCE_FILE_ID }}
           GCS_BUCKET_NAME: ${{ secrets.GCS_BUCKET_NAME }}
           GCS_KEY_JSON: ${{ secrets.GCS_KEY_JSON }}
+          ACTIVE_WINDOW_START: "2026-04-23"
+          ACTIVE_WINDOW_END: "2026-04-26"
+          ACTIVE_HOUR_START_IST: "8"
+          ACTIVE_HOUR_END_IST: "22"
         run: python backup.py

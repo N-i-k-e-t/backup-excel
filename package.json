@@ -1,0 +1,9 @@
+{
+  "name": "aff-backup",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "@google-cloud/storage": "^7.14.0",
+    "googleapis": "^144.0.0"
+  }
+}

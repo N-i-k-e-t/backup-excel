@@ -1,19 +1,24 @@
-name: Excel Backup (IST 8AM-10PM, every 30 min)
+name: Excel Backup (no-auth, IST 8AM-10PM)
 
 on:
   schedule:
-    # Cron runs in UTC. IST = UTC+5:30.
-    # 8:00 AM IST = 02:30 UTC ... 10:00 PM IST = 16:30 UTC.
-    # This schedule covers every :00 and :30 from 02:30 UTC to 16:30 UTC.
     - cron: "30 2 * * *"
     - cron: "0,30 3-16 * * *"
   workflow_dispatch:
+    inputs:
+      force:
+        description: "Force run (ignore active window)"
+        required: false
+        default: "false"
+
+permissions:
+  contents: write
 
 jobs:
   backup:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repo
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Setup Python
@@ -21,17 +26,24 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install dependencies
-        run: pip install google-auth google-api-python-client google-cloud-storage
-
-      - name: Run backup script
+      - name: Run backup
         env:
-          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
-          SOURCE_FILE_ID: ${{ secrets.SOURCE_FILE_ID }}
-          GCS_BUCKET_NAME: ${{ secrets.GCS_BUCKET_NAME }}
-          GCS_KEY_JSON: ${{ secrets.GCS_KEY_JSON }}
+          SOURCE_URL: ${{ secrets.SOURCE_URL }}
           ACTIVE_WINDOW_START: "2026-04-23"
           ACTIVE_WINDOW_END: "2026-04-26"
           ACTIVE_HOUR_START_IST: "8"
           ACTIVE_HOUR_END_IST: "22"
+          FORCE_RUN: ${{ github.event.inputs.force == 'true' && '1' || '0' }}
         run: python backup.py
+
+      - name: Commit backup to repo
+        run: |
+          if [ -d backups ] && [ "$(ls -A backups 2>/dev/null)" ]; then
+            git config user.name "backup-bot"
+            git config user.email "backup-bot@users.noreply.github.com"
+            git add backups/
+            git diff --cached --quiet || git commit -m "backup: $(date -u +'%Y-%m-%d %H:%M UTC')"
+            git push
+          else
+            echo "No backup files produced (outside window). Nothing to commit."
+          fi

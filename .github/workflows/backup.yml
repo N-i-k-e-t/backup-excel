@@ -1,9 +1,8 @@
-name: Excel Backup (no-auth, IST 8AM-10PM)
+name: Excel Backup + Evaluate (no-auth, IST 8AM-10PM)
 
 on:
   schedule:
-    - cron: "30 2 * * *"
-    - cron: "0,30 3-16 * * *"
+    - cron: "0,30 2-16 * * *"
   workflow_dispatch:
     inputs:
       force:
@@ -18,32 +17,34 @@ jobs:
   backup:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-
-      - name: Run backup
+      - name: Install deps
+        run: pip install requests pandas openpyxl
+      - name: Check active window (IST 8AM-10PM)
+        id: win
+        run: |
+          H=$(TZ=Asia/Kolkata date +%H)
+          if [ "${{ github.event.inputs.force }}" = "true" ] || ([ $H -ge 8 ] && [ $H -lt 22 ]); then
+            echo "go=yes" >> $GITHUB_OUTPUT
+          else
+            echo "go=no"  >> $GITHUB_OUTPUT
+          fi
+      - name: Backup
+        if: steps.win.outputs.go == 'yes'
         env:
           SOURCE_URL: ${{ secrets.SOURCE_URL }}
-          ACTIVE_WINDOW_START: "2026-04-23"
-          ACTIVE_WINDOW_END: "2026-04-26"
-          ACTIVE_HOUR_START_IST: "8"
-          ACTIVE_HOUR_END_IST: "22"
-          FORCE_RUN: ${{ github.event.inputs.force == 'true' && '1' || '0' }}
         run: python backup.py
-
-      - name: Commit backup to repo
+      - name: Evaluate
+        if: steps.win.outputs.go == 'yes'
+        run: python evaluate.py
+      - name: Commit
+        if: steps.win.outputs.go == 'yes'
         run: |
-          if [ -d backups ] && [ "$(ls -A backups 2>/dev/null)" ]; then
-            git config user.name "backup-bot"
-            git config user.email "backup-bot@users.noreply.github.com"
-            git add backups/
-            git diff --cached --quiet || git commit -m "backup: $(date -u +'%Y-%m-%d %H:%M UTC')"
-            git push
-          else
-            echo "No backup files produced (outside window). Nothing to commit."
-          fi
+          git config user.name  "backup-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add backups docs
+          git diff --cached --quiet || git commit -m "backup+eval: $(TZ=Asia/Kolkata date '+%F %H:%M IST')"
+          git push

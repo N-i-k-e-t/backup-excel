@@ -1,0 +1,93 @@
+<!doctype html>
+<html><head><meta charset=utf-8><title>AFF Evaluation Dashboard</title>
+<meta name=viewport content="width=device-width,initial-scale=1">
+<style>
+body{font:14px/1.5 system-ui,sans-serif;margin:0;background:#0d1117;color:#e6edf3}
+header{padding:16px 24px;background:#161b22;border-bottom:1px solid #30363d;display:flex;justify-content:space-between;align-items:center}
+h1{margin:0;font-size:20px}
+.meta{color:#8b949e;font-size:12px}
+.filters{padding:12px 24px;background:#0d1117;border-bottom:1px solid #30363d;display:flex;gap:12px;flex-wrap:wrap}
+.filters input,.filters select{background:#0d1117;color:#e6edf3;border:1px solid #30363d;padding:6px 10px;border-radius:6px}
+main{padding:20px 24px;display:grid;grid-template-columns:repeat(auto-fill,minmax(380px,1fr));gap:16px}
+.card{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:14px 16px}
+.card h3{margin:0 0 4px;font-size:16px}
+.sub{color:#8b949e;font-size:12px;margin-bottom:8px}
+table{width:100%;border-collapse:collapse;font-size:12px;margin:8px 0}
+th,td{padding:4px 6px;border-bottom:1px solid #21262d;text-align:left}
+th{color:#8b949e;font-weight:500}
+.pct{font-size:24px;font-weight:600;color:#58a6ff}
+.badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600}
+.b-strong{background:#238636;color:#fff}
+.b-reject{background:#da3633;color:#fff}
+.b-review{background:#d29922;color:#000}
+.b-single{background:#30363d;color:#e6edf3}
+.split{color:#f85149;font-weight:600}
+.ok{color:#3fb950}
+.ai{margin-top:8px;padding-top:8px;border-top:1px dashed #30363d;font-size:12px}
+.ai b{color:#58a6ff}
+.empty{padding:40px;text-align:center;color:#8b949e;grid-column:1/-1}
+</style></head><body>
+<header>
+  <div><h1>AFF Evaluation Dashboard</h1><div class=meta id=meta>loading...</div></div>
+  <div class=meta>auto-refresh every 30 min</div>
+</header>
+<div class=filters>
+  <input id=q placeholder="Search name/startup/ID">
+  <select id=sg><option value="">All subgroups</option></select>
+  <select id=cs>
+    <option value="">All consensus</option>
+    <option>STRONG SHORTLIST</option><option>PANEL REVIEW</option>
+    <option>REJECT</option><option>SINGLE JURY</option>
+  </select>
+  <label><input type=checkbox id=splitOnly> Split flags only</label>
+</div>
+<main id=grid><div class=empty>Loading data.json ...</div></main>
+<script>
+async function load(){
+  try{
+    const r = await fetch('data.json?t='+Date.now());
+    const d = await r.json();
+    window.__data = d;
+    document.getElementById('meta').textContent = `${d.counts.founders} founders / ${d.counts.rows} evals  generated ${d.generated}`;
+    const sgs=[...new Set(d.master_cards.map(c=>c.subgroup).filter(Boolean))].sort();
+    const sgSel=document.getElementById('sg');
+    sgs.forEach(s=>{const o=document.createElement('option');o.textContent=s;sgSel.appendChild(o)});
+    render();
+  }catch(e){document.getElementById('grid').innerHTML='<div class=empty>No data yet. Run evaluate.py after backup.</div>'}
+}
+function render(){
+  const d=window.__data; if(!d) return;
+  const q=document.getElementById('q').value.toLowerCase();
+  const sg=document.getElementById('sg').value;
+  const cs=document.getElementById('cs').value;
+  const split=document.getElementById('splitOnly').checked;
+  const grid=document.getElementById('grid'); grid.innerHTML='';
+  const cards=d.master_cards.filter(c=>{
+    if(q && !(`${c.fid} ${c.name} ${c.startup}`.toLowerCase().includes(q))) return false;
+    if(sg && c.subgroup!==sg) return false;
+    if(cs && c.consensus!==cs) return false;
+    if(split && !c.buckets.some(b=>b.flag==='SPLIT')) return false;
+    return true;
+  });
+  if(!cards.length){grid.innerHTML='<div class=empty>No matches</div>';return}
+  cards.forEach(c=>{
+    const badge={'STRONG SHORTLIST':'b-strong','REJECT':'b-reject','PANEL REVIEW':'b-review','SINGLE JURY':'b-single'}[c.consensus]||'b-single';
+    grid.insertAdjacentHTML('beforeend',`<div class=card>
+      <h3>${c.fid}  ${c.name||'?'}</h3>
+      <div class=sub>${c.startup||''} &middot; ${c.subgroup||''} &middot; ${c.jury_a||''}${c.jury_b?' + '+c.jury_b:''}</div>
+      <div class=pct>${c.final??'--'}%</div>
+      <span class="badge ${badge}">${c.consensus}</span>
+      <table><tr><th>Bucket</th><th>A</th><th>B</th><th>Avg</th><th>Δ</th></tr>
+      ${c.buckets.map(b=>`<tr><td>${b.bucket}</td><td>${b.a??'-'}</td><td>${b.b??'-'}</td><td>${b.avg??'-'}</td><td class="${b.flag==='SPLIT'?'split':'ok'}">${b.delta||0}${b.flag==='SPLIT'?' ⚠':''}</td></tr>`).join('')}
+      </table>
+      <div class=ai><b>Strengths:</b> ${(c.ai.strengths||[]).map(s=>'• '+s).join('<br>')||'-'}
+      <br><b>Concerns:</b> ${(c.ai.concerns||[]).map(s=>'• '+s).join('<br>')||'-'}
+      ${c.ai.contradictions?.length?'<br><b style=color:#f85149>Contradictions:</b> '+c.ai.contradictions.join('; '):''}
+      <br><b>Confidence:</b> ${c.ai.confidence}%</div>
+    </div>`);
+  });
+}
+['q','sg','cs','splitOnly'].forEach(id=>document.getElementById(id).addEventListener('input',render));
+load();
+setInterval(load, 30*60*1000);
+</script></body></html>
